@@ -1,158 +1,689 @@
 #!/usr/bin/env python3
-# KaliPenHub - Pentesting Toolkit for Kali Linux
+# PenTest Hub - A comprehensive interface for penetration testing tools
+# Author: [Your Name]
+
 import os
 import sys
 import subprocess
-import tkinter as tk
-from tkinter import ttk, messagebox
-import threading
-import webbrowser
+import argparse
 import json
+import platform
+import socket
+import requests
+import threading
+import time
 from datetime import datetime
-import customtkinter as ctk
-import nmap
-import scapy.all as scapy
+from colorama import init, Fore, Style, Back
 
-class KaliPenHub:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("KaliPenHub")
-        self.root.geometry("1200x800")
+# Initialize colorama for cross-platform colored terminal output
+init()
+
+class PenTestHub:
+    def __init__(self):
+        self.version = "2.0"
+        self.config_dir = os.path.expanduser("~/.pentesthub")
+        self.history_file = os.path.join(self.config_dir, "history.json")
+        self.config_file = os.path.join(self.config_dir, "config.json")
+        self.custom_tools_file = os.path.join(self.config_dir, "custom_tools.json")
         
-        # Setup UI
-        ctk.set_appearance_mode("dark")
-        ctk.set_default_color_theme("blue")
+        # Ensure config directory exists
+        if not os.path.exists(self.config_dir):
+            os.makedirs(self.config_dir)
         
-        self.create_widgets()
+        # Load custom tools if file exists
+        self.custom_tools = {}
+        if os.path.exists(self.custom_tools_file):
+            try:
+                with open(self.custom_tools_file, 'r') as f:
+                    self.custom_tools = json.load(f)
+            except:
+                print(f"{Fore.RED}Error loading custom tools file.{Style.RESET_ALL}")
         
-    def create_widgets(self):
-        # Main notebook (tabs)
-        self.notebook = ttk.Notebook(self.root)
-        
-        # Create tabs
-        self.dashboard_tab = ctk.CTkFrame(self.notebook)
-        self.recon_tab = ctk.CTkFrame(self.notebook)
-        
-        self.notebook.add(self.dashboard_tab, text="Dashboard")
-        self.notebook.add(self.recon_tab, text="Reconnaissance")
-        
-        # Dashboard content
-        self.setup_dashboard()
-        self.setup_recon_tab()
-        
-        self.notebook.pack(expand=True, fill="both")
-    
-    def setup_dashboard(self):
-        # Welcome label
-        welcome = ctk.CTkLabel(
-            self.dashboard_tab,
-            text="Welcome to KaliPenHub",
-            font=("Arial", 24)
-        )
-        welcome.pack(pady=20)
-        
-        # Quick tools frame
-        tools_frame = ctk.CTkFrame(self.dashboard_tab)
-        tools_frame.pack(pady=10)
-        
-        # Add tool buttons
-        tools = [
-            ("Nmap Scan", self.run_nmap),
-            ("Nikto Scan", self.run_nikto),
-            ("Metasploit", self.run_metasploit)
-        ]
-        
-        for text, command in tools:
-            btn = ctk.CTkButton(
-                tools_frame,
-                text=text,
-                command=command,
-                width=200
-            )
-            btn.pack(pady=5)
-    
-    def setup_recon_tab(self):
-        # Target entry
-        target_frame = ctk.CTkFrame(self.recon_tab)
-        target_frame.pack(pady=10)
-        
-        ctk.CTkLabel(target_frame, text="Target:").pack(side="left")
-        self.target_entry = ctk.CTkEntry(target_frame, width=300)
-        self.target_entry.pack(side="left", padx=10)
-        
-        # Scan buttons
-        scan_frame = ctk.CTkFrame(self.recon_tab)
-        scan_frame.pack(pady=10)
-        
-        scans = [
-            ("Quick Scan", "-T4 -F"),
-            ("Full Scan", "-T4 -A -v"),
-            ("Vuln Scan", "--script vuln")
-        ]
-        
-        for text, args in scans:
-            btn = ctk.CTkButton(
-                scan_frame,
-                text=text,
-                command=lambda a=args: self.run_scan(a),
-                width=150
-            )
-            btn.pack(side="left", padx=5)
-    
-    def run_nmap(self):
-        target = self.target_entry.get() or "127.0.0.1"
-        threading.Thread(target=self._run_nmap, args=(target,)).start()
-    
-    def _run_nmap(self, target):
-        try:
-            nm = nmap.PortScanner()
-            nm.scan(target)
-            messagebox.showinfo("Scan Complete", f"Scan results for {target}:\n{nm.csv()}")
-        except Exception as e:
-            messagebox.showerror("Error", f"Scan failed: {str(e)}")
-    
-    def run_scan(self, args):
-        target = self.target_entry.get()
-        if not target:
-            messagebox.showwarning("Warning", "Please enter a target")
-            return
+        self.tools = {
+            # Reconnaissance
+            "nmap": {"desc": "Network scanner", "cmd": "nmap", "category": "recon"},
+            "whois": {"desc": "Domain information lookup", "cmd": "whois", "category": "recon"},
+            "dig": {"desc": "DNS lookup utility", "cmd": "dig", "category": "recon"},
+            "theHarvester": {"desc": "Email and subdomain harvesting", "cmd": "theHarvester", "category": "recon"},
+            "recon-ng": {"desc": "Web reconnaissance framework", "cmd": "recon-ng", "category": "recon"},
+            "amass": {"desc": "In-depth Attack Surface Mapping", "cmd": "amass", "category": "recon"},
+            "subfinder": {"desc": "Subdomain discovery tool", "cmd": "subfinder", "category": "recon"},
+            "gobuster": {"desc": "Directory/file & DNS busting tool", "cmd": "gobuster", "category": "recon"},
+            "masscan": {"desc": "Fast port scanner", "cmd": "masscan", "category": "recon"},
+            "dnsenum": {"desc": "DNS enumeration tool", "cmd": "dnsenum", "category": "recon"},
+            "fierce": {"desc": "DNS analysis tool", "cmd": "fierce", "category": "recon"},
+            "sublist3r": {"desc": "Fast subdomains enumeration", "cmd": "sublist3r", "category": "recon"},
             
-        threading.Thread(target=self._run_scan, args=(target, args)).start()
-    
-    def _run_scan(self, target, args):
-        try:
-            nm = nmap.PortScanner()
-            nm.scan(target, arguments=args)
-            messagebox.showinfo("Results", f"Scan completed:\n{nm.scaninfo()}")
-        except Exception as e:
-            messagebox.showerror("Error", str(e))
-    
-    def run_nikto(self):
-        target = self.target_entry.get()
-        if not target:
-            messagebox.showwarning("Warning", "Please enter a target")
-            return
+            # Web Application
+            "nikto": {"desc": "Web server scanner", "cmd": "nikto", "category": "web"},
+            "dirb": {"desc": "Web content scanner", "cmd": "dirb", "category": "web"},
+            "sqlmap": {"desc": "SQL injection automation", "cmd": "sqlmap", "category": "web"},
+            "wpscan": {"desc": "WordPress vulnerability scanner", "cmd": "wpscan", "category": "web"},
+            "burpsuite": {"desc": "Web application proxy", "cmd": "burpsuite", "category": "web"},
+            "owasp-zap": {"desc": "Web app vulnerability scanner", "cmd": "owasp-zap-2.12.0.sh", "category": "web"},
+            "ffuf": {"desc": "Fast web fuzzer", "cmd": "ffuf", "category": "web"},
+            "wafw00f": {"desc": "Web Application Firewall detector", "cmd": "wafw00f", "category": "web"},
+            "whatweb": {"desc": "Web scanner", "cmd": "whatweb", "category": "web"},
+            "nuclei": {"desc": "Vulnerability scanner", "cmd": "nuclei", "category": "web"},
+            "xsser": {"desc": "XSS vulnerability scanner", "cmd": "xsser", "category": "web"},
+            "commix": {"desc": "Command injection scanner", "cmd": "commix", "category": "web"},
             
-        threading.Thread(target=self._run_nikto, args=(target,)).start()
+            # Wireless
+            "aircrack-ng": {"desc": "Wireless network security suite", "cmd": "aircrack-ng", "category": "wireless"},
+            "wifite": {"desc": "Automated wireless attack tool", "cmd": "wifite", "category": "wireless"},
+            "kismet": {"desc": "Wireless network detector", "cmd": "kismet", "category": "wireless"},
+            "bettercap": {"desc": "Network attack & monitoring", "cmd": "bettercap", "category": "wireless"},
+            "airgeddon": {"desc": "Multi-use bash script for Linux systems", "cmd": "airgeddon", "category": "wireless"},
+            "wifiphisher": {"desc": "Rogue Access Point framework", "cmd": "wifiphisher", "category": "wireless"},
+            "fluxion": {"desc": "MITM WPA attack framework", "cmd": "fluxion", "category": "wireless"},
+            
+            # Password Attacks
+            "hydra": {"desc": "Login cracker", "cmd": "hydra", "category": "password"},
+            "john": {"desc": "Password cracker", "cmd": "john", "category": "password"},
+            "hashcat": {"desc": "Advanced password recovery", "cmd": "hashcat", "category": "password"},
+            "medusa": {"desc": "Parallel login brute-forcer", "cmd": "medusa", "category": "password"},
+            "crunch": {"desc": "Wordlist generator", "cmd": "crunch", "category": "password"},
+            "cewl": {"desc": "Custom word list generator", "cmd": "cewl", "category": "password"},
+            "rsmangler": {"desc": "Wordlist manipulation tool", "cmd": "rsmangler", "category": "password"},
+            "hashid": {"desc": "Hash identifier", "cmd": "hashid", "category": "password"},
+            "patator": {"desc": "Multi-purpose brute-forcer", "cmd": "patator", "category": "password"},
+            
+            # Exploitation
+            "metasploit": {"desc": "Exploitation framework", "cmd": "msfconsole", "category": "exploit"},
+            "searchsploit": {"desc": "Exploit database search", "cmd": "searchsploit", "category": "exploit"},
+            "beef-xss": {"desc": "Browser exploitation framework", "cmd": "beef-xss", "category": "exploit"},
+            "set": {"desc": "Social-Engineer Toolkit", "cmd": "setoolkit", "category": "exploit"},
+            "routersploit": {"desc": "Router exploitation framework", "cmd": "rsf", "category": "exploit"},
+            "commix": {"desc": "Command injection exploiter", "cmd": "commix", "category": "exploit"},
+            "armitage": {"desc": "Metasploit GUI", "cmd": "armitage", "category": "exploit"},
+            "veil": {"desc": "Payload generator", "cmd": "veil", "category": "exploit"},
+            
+            # Sniffing & Spoofing
+            "wireshark": {"desc": "Network protocol analyzer", "cmd": "wireshark", "category": "sniffing"},
+            "ettercap": {"desc": "MITM attacks", "cmd": "ettercap -G", "category": "sniffing"},
+            "responder": {"desc": "LLMNR/NBT-NS/mDNS poisoner", "cmd": "responder", "category": "sniffing"},
+            "tcpdump": {"desc": "Network packet analyzer", "cmd": "tcpdump", "category": "sniffing"},
+            "dsniff": {"desc": "Network sniffing tools", "cmd": "dsniff", "category": "sniffing"},
+            "mitmproxy": {"desc": "Interactive HTTPS proxy", "cmd": "mitmproxy", "category": "sniffing"},
+            "scapy": {"desc": "Packet manipulation", "cmd": "scapy", "category": "sniffing"},
+            "netsniff-ng": {"desc": "High performance network sniffer", "cmd": "netsniff-ng", "category": "sniffing"},
+            "arpspoof": {"desc": "ARP spoofing", "cmd": "arpspoof", "category": "sniffing"},
+            
+            # Post Exploitation
+            "empire": {"desc": "Post-exploitation framework", "cmd": "empire", "category": "post"},
+            "mimikatz": {"desc": "Windows credential dumper", "cmd": "mimikatz", "category": "post"},
+            "powersploit": {"desc": "PowerShell post-exploitation", "cmd": "powersploit", "category": "post"},
+            "bloodhound": {"desc": "Active Directory visualizer", "cmd": "bloodhound", "category": "post"},
+            "evil-winrm": {"desc": "Windows Remote Management shell", "cmd": "evil-winrm", "category": "post"},
+            "impacket": {"desc": "Network protocols toolkit", "cmd": "impacket-scripts", "category": "post"},
+            "crackmapexec": {"desc": "Swiss army knife for networks", "cmd": "crackmapexec", "category": "post"},
+            "weevely": {"desc": "Weaponized web shell", "cmd": "weevely", "category": "post"},
+            
+            # Forensics
+            "volatility": {"desc": "Memory forensics", "cmd": "volatility", "category": "forensics"},
+            "autopsy": {"desc": "Digital forensics platform", "cmd": "autopsy", "category": "forensics"},
+            "foremost": {"desc": "File recovery", "cmd": "foremost", "category": "forensics"},
+            "binwalk": {"desc": "Firmware analysis", "cmd": "binwalk", "category": "forensics"},
+            "exiftool": {"desc": "Metadata analyzer", "cmd": "exiftool", "category": "forensics"},
+            "scalpel": {"desc": "File carver", "cmd": "scalpel", "category": "forensics"},
+            "bulk_extractor": {"desc": "Feature extractor", "cmd": "bulk_extractor", "category": "forensics"},
+            "chkrootkit": {"desc": "Rootkit detector", "cmd": "chkrootkit", "category": "forensics"},
+            "rkhunter": {"desc": "Rootkit hunter", "cmd": "rkhunter", "category": "forensics"},
+            
+            # Reporting
+            "maltego": {"desc": "Interactive data mining", "cmd": "maltego", "category": "reporting"},
+            "faraday": {"desc": "Collaborative pentesting environment", "cmd": "faraday-client", "category": "reporting"},
+            "dradis": {"desc": "Reporting and collaboration", "cmd": "dradis", "category": "reporting"},
+            "magictree": {"desc": "Data management for tests", "cmd": "magictree", "category": "reporting"},
+            
+            # Mobile
+            "apktool": {"desc": "Android APK analysis", "cmd": "apktool", "category": "mobile"},
+            "dex2jar": {"desc": "Android dex to jar converter", "cmd": "d2j-dex2jar", "category": "mobile"},
+            "jadx": {"desc": "Dex to Java decompiler", "cmd": "jadx", "category": "mobile"},
+            "frida": {"desc": "Dynamic instrumentation toolkit", "cmd": "frida", "category": "mobile"},
+            "objection": {"desc": "Mobile exploration toolkit", "cmd": "objection", "category": "mobile"},
+            
+            # OSINT
+            "maltego": {"desc": "OSINT visualization", "cmd": "maltego", "category": "osint"},
+            "shodan": {"desc": "Search engine for Internet-connected devices", "cmd": "shodan", "category": "osint"},
+            "osrframework": {"desc": "Username checking tools", "cmd": "osrframework", "category": "osint"},
+            "spiderfoot": {"desc": "OSINT automation tool", "cmd": "spiderfoot", "category": "osint"},
+            "recon-ng": {"desc": "Web reconnaissance framework", "cmd": "recon-ng", "category": "osint"},
+            "metagoofil": {"desc": "Metadata extraction tool", "cmd": "metagoofil", "category": "osint"},
+            
+            # Utilities
+            "ncat": {"desc": "Networking utility", "cmd": "ncat", "category": "utility"},
+            "socat": {"desc": "Multipurpose relay", "cmd": "socat", "category": "utility"},
+            "tmux": {"desc": "Terminal multiplexer", "cmd": "tmux", "category": "utility"},
+            "screen": {"desc": "Terminal multiplexer", "cmd": "screen", "category": "utility"},
+            "proxychains": {"desc": "Proxy redirection", "cmd": "proxychains", "category": "utility"},
+            "tor": {"desc": "Anonymity network", "cmd": "tor", "category": "utility"},
+            "macchanger": {"desc": "MAC address spoofer", "cmd": "macchanger", "category": "utility"},
+        }
+        
+        # Merge custom tools
+        self.tools.update(self.custom_tools)
+        
+        # Build categories from tools
+        self.categories = {}
+        for tool_name, tool_info in self.tools.items():
+            category = tool_info.get("category", "uncategorized")
+            if category not in self.categories:
+                self.categories[category] = []
+            self.categories[category].append(tool_name)
+        
+        self.common_commands = {
+            "nmap": {
+                "basic": "nmap [target]",
+                "full": "nmap -sC -sV -p- [target]",
+                "stealth": "nmap -sS -T2 [target]",
+                "udp": "nmap -sU [target]",
+                "vuln_scan": "nmap --script vuln [target]",
+                "os_detection": "nmap -O [target]",
+                "aggressive": "nmap -A [target]"
+            },
+            "sqlmap": {
+                "basic": "sqlmap -u [url]",
+                "with_data": "sqlmap -u [url] --data=\"[post_data]\"",
+                "cookie": "sqlmap -u [url] --cookie=\"[cookie]\"",
+                "dump": "sqlmap -u [url] --dbms=[dbms] --dump",
+                "os_shell": "sqlmap -u [url] --os-shell",
+                "risk_level": "sqlmap -u [url] --risk=3 --level=5"
+            },
+            "hydra": {
+                "ssh": "hydra -l [username] -P [wordlist] ssh://[target]",
+                "web_form": "hydra -l [username] -P [wordlist] [target] http-post-form \"[path]:[params]:F=[fail_msg]\"",
+                "ftp": "hydra -l [username] -P [wordlist] ftp://[target]",
+                "smb": "hydra -l [username] -P [wordlist] smb://[target]",
+                "rdp": "hydra -l [username] -P [wordlist] rdp://[target]"
+            },
+            "metasploit": {
+                "search": "search [keyword]",
+                "use": "use [module]",
+                "set": "set [option] [value]",
+                "run": "run",
+                "exploit": "exploit",
+                "sessions": "sessions -l",
+                "background": "background"
+            },
+            "aircrack-ng": {
+                "monitor_mode": "airmon-ng start [interface]",
+                "capture": "airodump-ng [monitor_interface]",
+                "targeted_capture": "airodump-ng -c [channel] --bssid [bssid] -w [output_file] [monitor_interface]",
+                "deauth": "aireplay-ng --deauth [count] -a [bssid] [monitor_interface]",
+                "crack_wpa": "aircrack-ng -w [wordlist] [capture_file.cap]"
+            },
+            "hashcat": {
+                "md5": "hashcat -m 0 -a 0 [hash_file] [wordlist]",
+                "sha1": "hashcat -m 100 -a 0 [hash_file] [wordlist]",
+                "ntlm": "hashcat -m 1000 -a 0 [hash_file] [wordlist]",
+                "wpa": "hashcat -m 22000 -a 0 [hash_file] [wordlist]",
+                "rule_based": "hashcat -m 0 -a 0 [hash_file] [wordlist] -r [rule_file]"
+            },
+            "john": {
+                "basic": "john [hash_file]",
+                "wordlist": "john --wordlist=[wordlist] [hash_file]",
+                "format": "john --format=[format] [hash_file]",
+                "incremental": "john --incremental [hash_file]",
+                "show": "john --show [hash_file]"
+            },
+            "gobuster": {
+                "dir": "gobuster dir -u [url] -w [wordlist]",
+                "dns": "gobuster dns -d [domain] -w [wordlist]",
+                "vhost": "gobuster vhost -u [url] -w [wordlist]",
+                "dir_advanced": "gobuster dir -u [url] -w [wordlist] -x [extensions] -t [threads]"
+            },
+            "ffuf": {
+                "dir": "ffuf -u [url]/FUZZ -w [wordlist]",
+                "vhost": "ffuf -u http://FUZZ.[domain] -w [wordlist]",
+                "parameter": "ffuf -u [url]?FUZZ=value -w [wordlist]",
+                "post_data": "ffuf -u [url] -X POST -d 'FUZZ=value' -w [wordlist]"
+            },
+            "crackmapexec": {
+                "smb": "crackmapexec smb [target] -u [username] -p [password]",
+                "winrm": "crackmapexec winrm [target] -u [username] -p [password]",
+                "mssql": "crackmapexec mssql [target] -u [username] -p [password]",
+                "smb_shares": "crackmapexec smb [target] -u [username] -p [password] --shares"
+            }
+        }
+        
+        # Command history
+        self.history = []
+        if os.path.exists(self.history_file):
+            try:
+                with open(self.history_file, 'r') as f:
+                    self.history = json.load(f)
+            except:
+                pass
     
-    def _run_nikto(self, target):
+    def save_history(self):
+        """Save command history to file"""
         try:
-            result = subprocess.run(
-                ["nikto", "-h", target],
-                capture_output=True,
-                text=True
-            )
-            messagebox.showinfo("Nikto Results", result.stdout)
+            with open(self.history_file, 'w') as f:
+                json.dump(self.history[-100:], f)  # Keep last 100 commands
         except Exception as e:
-            messagebox.showerror("Error", str(e))
+            print(f"{Fore.RED}Error saving history: {str(e)}{Style.RESET_ALL}")
     
-    def run_metasploit(self):
+    def save_custom_tools(self):
+        """Save custom tools to file"""
         try:
-            subprocess.Popen(["msfconsole"])
+            with open(self.custom_tools_file, 'w') as f:
+                json.dump(self.custom_tools, f, indent=2)
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to start Metasploit: {str(e)}")
+            print(f"{Fore.RED}Error saving custom tools: {str(e)}{Style.RESET_ALL}")
+    
+    def add_custom_tool(self, name, description, command, category):
+        """Add a custom tool to the collection"""
+        self.custom_tools[name] = {
+            "desc": description,
+            "cmd": command,
+            "category": category
+        }
+        
+        # Update main tools dictionary
+        self.tools[name] = self.custom_tools[name]
+        
+        # Update categories
+        if category not in self.categories:
+            self.categories[category] = []
+        if name not in self.categories[category]:
+            self.categories[category].append(name)
+        
+        self.save_custom_tools()
+        print(f"\n{Fore.GREEN}Tool '{name}' added successfully.{Style.RESET_ALL}\n")
+    
+    def remove_custom_tool(self, name):
+        """Remove a custom tool"""
+        if name in self.custom_tools:
+            category = self.custom_tools[name].get("category", "uncategorized")
+            
+            # Remove from custom tools
+            del self.custom_tools[name]
+            
+            # Remove from main tools dictionary
+            if name in self.tools:
+                del self.tools[name]
+            
+            # Remove from categories
+            if category in self.categories and name in self.categories[category]:
+                self.categories[category].remove(name)
+            
+            self.save_custom_tools()
+            print(f"\n{Fore.GREEN}Tool '{name}' removed successfully.{Style.RESET_ALL}\n")
+        else:
+            print(f"\n{Fore.RED}'{name}' is not a custom tool.{Style.RESET_ALL}\n")
+    
+    def print_banner(self):
+        banner = f"""
+{Fore.RED}██████╗ ███████╗███╗   ██╗████████╗███████╗███████╗████████╗    ██╗  ██╗██╗   ██╗██████╗ 
+{Fore.RED}██╔══██╗██╔════╝████╗  ██║╚══██╔══╝██╔════╝██╔════╝╚══██╔══╝    ██║  ██║██║   ██║██╔══██╗
+{Fore.RED}██████╔╝█████╗  ██╔██╗ ██║   ██║   █████╗  ███████╗   ██║       ███████║██║   ██║██████╔╝
+{Fore.RED}██╔═══╝ ██╔══╝  ██║╚██╗██║   ██║   ██╔══╝  ╚════██║   ██║       ██╔══██║██║   ██║██╔══██╗
+{Fore.RED}██║     ███████╗██║ ╚████║   ██║   ███████╗███████║   ██║       ██║  ██║╚██████╔╝██████╔╝
+{Fore.RED}╚═╝     ╚══════╝╚═╝  ╚═══╝   ╚═╝   ╚══════╝╚══════╝   ╚═╝       ╚═╝  ╚═╝ ╚═════╝ ╚═════╝ 
+{Style.RESET_ALL}
+{Fore.CYAN}A comprehensive interface for penetration testing tools {Fore.YELLOW}v{self.version}{Style.RESET_ALL}
+{Fore.YELLOW}Type 'help' to see available commands{Style.RESET_ALL}
+"""
+        print(banner)
+    
+    def print_help(self):
+        print(f"\n{Fore.GREEN}Available commands:{Style.RESET_ALL}")
+        print(f"  {Fore.YELLOW}list{Style.RESET_ALL} - List all available tools")
+        print(f"  {Fore.YELLOW}list <category>{Style.RESET_ALL} - List tools in a specific category")
+        print(f"  {Fore.YELLOW}categories{Style.RESET_ALL} - Show all tool categories")
+        print(f"  {Fore.YELLOW}info <tool>{Style.RESET_ALL} - Show information about a tool")
+        print(f"  {Fore.YELLOW}run <tool> [args]{Style.RESET_ALL} - Run a specific tool with optional arguments")
+        print(f"  {Fore.YELLOW}examples <tool>{Style.RESET_ALL} - Show common usage examples for a tool")
+        print(f"  {Fore.YELLOW}search <keyword>{Style.RESET_ALL} - Search for tools by keyword")
+        print(f"  {Fore.YELLOW}add-tool{Style.RESET_ALL} - Add a custom tool")
+        print(f"  {Fore.YELLOW}remove-tool <name>{Style.RESET_ALL} - Remove a custom tool")
+        print(f"  {Fore.YELLOW}history{Style.RESET_ALL} - Show command history")
+        print(f"  {Fore.YELLOW}scan <target>{Style.RESET_ALL} - Run a quick reconnaissance scan")
+        print(f"  {Fore.YELLOW}portscan <target>{Style.RESET_ALL} - Run a quick port scan")
+        print(f"  {Fore.YELLOW}webscan <url>{Style.RESET_ALL} - Run a basic web vulnerability scan")
+        print(f"  {Fore.YELLOW}sysinfo{Style.RESET_ALL} - Display system information")
+        print(f"  {Fore.YELLOW}netinfo{Style.RESET_ALL} - Display network information")
+        print(f"  {Fore.YELLOW}update{Style.RESET_ALL} - Check for tool updates")
+        print(f"  {Fore.YELLOW}clear{Style.RESET_ALL} - Clear the screen")
+        print(f"  {Fore.YELLOW}help{Style.RESET_ALL} - Show this help message")
+        print(f"  {Fore.YELLOW}exit{Style.RESET_ALL} - Exit PenTest Hub\n")
+    
+    def list_categories(self):
+        print(f"\n{Fore.GREEN}Available categories:{Style.RESET_ALL}")
+        for category in sorted(self.categories.keys()):
+            print(f"  {Fore.YELLOW}{category}{Style.RESET_ALL} ({len(self.categories[category])} tools)")
+        print()
+    
+    def list_tools(self, category=None):
+        if category and category in self.categories:
+            tools_list = self.categories[category]
+            print(f"\n{Fore.GREEN}Tools in category '{category}':{Style.RESET_ALL}")
+            for tool in sorted(tools_list):
+                print(f"  {Fore.YELLOW}{tool}{Style.RESET_ALL} - {self.tools[tool]['desc']}")
+        else:
+            print(f"\n{Fore.GREEN}All available tools:{Style.RESET_ALL}")
+            for tool, info in sorted(self.tools.items()):
+                category = info.get('category', 'uncategorized')
+                print(f"  {Fore.YELLOW}{tool}{Style.RESET_ALL} - {info['desc']} {Fore.CYAN}[{category}]{Style.RESET_ALL}")
+        print()
+    
+    def search_tools(self, keyword):
+        results = []
+        keyword = keyword.lower()
+        
+        for tool_name, tool_info in self.tools.items():
+            if (keyword in tool_name.lower() or 
+                keyword in tool_info['desc'].lower() or 
+                keyword in tool_info.get('category', '').lower()):
+                results.append((tool_name, tool_info))
+        
+        if results:
+            print(f"\n{Fore.GREEN}Search results for '{keyword}':{Style.RESET_ALL}")
+            for tool_name, tool_info in sorted(results):
+                category = tool_info.get('category', 'uncategorized')
+                print(f"  {Fore.YELLOW}{tool_name}{Style.RESET_ALL} - {tool_info['desc']} {Fore.CYAN}[{category}]{Style.RESET_ALL}")
+        else:
+            print(f"\n{Fore.YELLOW}No tools found matching '{keyword}'.{Style.RESET_ALL}")
+        print()
+    
+    def show_tool_info(self, tool_name):
+        if tool_name in self.tools:
+            tool = self.tools[tool_name]
+            print(f"\n{Fore.GREEN}Tool: {Fore.YELLOW}{tool_name}{Style.RESET_ALL}")
+            print(f"  {Fore.CYAN}Description:{Style.RESET_ALL} {tool['desc']}")
+            print(f"  {Fore.CYAN}Command:{Style.RESET_ALL} {tool['cmd']}")
+            print(f"  {Fore.CYAN}Category:{Style.RESET_ALL} {tool.get('category', 'uncategorized')}")
+            
+            # Check if tool is installed
+            try:
+                which_cmd = "where" if platform.system() == "Windows" else "which"
+                subprocess.run([which_cmd, tool['cmd'].split()[0]], 
+                               stdout=subprocess.PIPE, 
+                               stderr=subprocess.PIPE, 
+                               check=True)
+                print(f"  {Fore.CYAN}Status:{Style.RESET_ALL} {Fore.GREEN}Installed{Style.RESET_ALL}")
+            except:
+                print(f"  {Fore.CYAN}Status:{Style.RESET_ALL} {Fore.RED}Not installed{Style.RESET_ALL}")
+            
+            print()
+        else:
+            print(f"\n{Fore.RED}Tool '{tool_name}' not found.{Style.RESET_ALL}\n")
+    
+    def show_examples(self, tool_name):
+        if tool_name in self.common_commands:
+            examples = self.common_commands[tool_name]
+            print(f"\n{Fore.GREEN}Common examples for {Fore.YELLOW}{tool_name}{Style.RESET_ALL}:")
+            for name, cmd in examples.items():
+                print(f"  {Fore.CYAN}{name}:{Style.RESET_ALL} {cmd}")
+            print()
+        else:
+            print(f"\n{Fore.YELLOW}No specific examples available for '{tool_name}'.{Style.RESET_ALL}\n")
+    
+    def run_tool(self, tool_name, args=None):
+        if tool_name in self.tools:
+            cmd = self.tools[tool_name]["cmd"]
+            command = cmd.split()
+            
+            if args:
+                command.extend(args)
+            
+            print(f"\n{Fore.GREEN}Running {Fore.YELLOW}{tool_name}{Fore.GREEN}...{Style.RESET_ALL}\n")
+            
+            # Add to history
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            self.history.append({
+                "timestamp": timestamp,
+                "tool": tool_name,
+                "command": " ".join(command)
+            })
+            self.save_history()
+            
+            try:
+                subprocess.run(command)
+            except FileNotFoundError:
+                print(f"\n{Fore.RED}Error: Tool '{tool_name}' is not installed or not in PATH.{Style.RESET_ALL}")
+                print(f"{Fore.YELLOW}You may need to install it using: sudo apt install {tool_name}{Style.RESET_ALL}\n")
+            except Exception as e:
+                print(f"\n{Fore.RED}Error running {tool_name}: {str(e)}{Style.RESET_ALL}\n")
+        else:
+            print(f"\n{Fore.RED}Tool '{tool_name}' not found.{Style.RESET_ALL}\n")
+    
+    def main_loop(self):
+        self.print_banner()
+        
+        while True:
+            try:
+                user_input = input(f"{Fore.GREEN}PenTest Hub{Style.RESET_ALL}> ").strip()
+                
+                if not user_input:
+                    continue
+                
+                parts = user_input.split()
+                command = parts[0].lower()
+                args = parts[1:] if len(parts) > 1 else []
+                
+                if command == "exit" or command == "quit":
+                    print(f"\n{Fore.YELLOW}Exiting PenTest Hub. Happy hacking!{Style.RESET_ALL}\n")
+                    break
+                
+                elif command == "help":
+                    self.print_help()
+                
+                elif command == "list":
+                    if args:
+                        self.list_tools(args[0])
+                    else:
+                        self.list_tools()
+                
+                elif command == "categories":
+                    self.list_categories()
+                
+                elif command == "info":
+                    if args:
+                        self.show_tool_info(args[0])
+                    else:
+                        print(f"\n{Fore.RED}Please specify a tool name.{Style.RESET_ALL}\n")
+                
+                elif command == "examples":
+                    if args:
+                        self.show_examples(args[0])
+                    else:
+                        print(f"\n{Fore.RED}Please specify a tool name.{Style.RESET_ALL}\n")
+                
+                elif command == "run":
+                    if args:
+                        self.run_tool(args[0], args[1:] if len(args) > 1 else None)
+                    else:
+                        print(f"\n{Fore.RED}Please specify a tool to run.{Style.RESET_ALL}\n")
+                
+                elif command == "history":
+                    self.show_history()
+                
+                elif command == "add":
+                    self.add_tool_interactive()
+                
+                elif command == "remove":
+                    if args:
+                        self.remove_custom_tool(args[0])
+                    else:
+                        print(f"\n{Fore.RED}Please specify a tool name to remove.{Style.RESET_ALL}\n")
+                
+                elif command == "update":
+                    self.check_for_updates()
+                
+                elif command == "system":
+                    self.system_info()
+                
+                else:
+                    print(f"\n{Fore.RED}Unknown command: {command}{Style.RESET_ALL}")
+                    print(f"{Fore.YELLOW}Type 'help' to see available commands.{Style.RESET_ALL}\n")
+            
+            except KeyboardInterrupt:
+                print(f"\n\n{Fore.YELLOW}Use 'exit' to quit PenTest Hub.{Style.RESET_ALL}\n")
+            except Exception as e:
+                print(f"\n{Fore.RED}Error: {str(e)}{Style.RESET_ALL}\n")
+    
+    def print_banner(self):
+        """Display the application banner"""
+        banner = f"""
+{Fore.CYAN}╔═══════════════════════════════════════════════════════════════╗
+║ {Fore.GREEN}██████╗ ███████╗███╗   ██╗████████╗███████╗███████╗████████╗{Fore.CYAN} ║
+║ {Fore.GREEN}██╔══██╗██╔════╝████╗  ██║╚══██╔══╝██╔════╝██╔════╝╚══██╔══╝{Fore.CYAN} ║
+║ {Fore.GREEN}██████╔╝█████╗  ██╔██╗ ██║   ██║   █████╗  ███████╗   ██║   {Fore.CYAN} ║
+║ {Fore.GREEN}██╔═══╝ ██╔══╝  ██║╚██╗██║   ██║   ██╔══╝  ╚════██║   ██║   {Fore.CYAN} ║
+║ {Fore.GREEN}██║     ███████╗██║ ╚████║   ██║   ███████╗███████║   ██║   {Fore.CYAN} ║
+║ {Fore.GREEN}╚═╝     ╚══════╝╚═╝  ╚═══╝   ╚═╝   ╚══════╝╚══════╝   ╚═╝   {Fore.CYAN} ║
+║                                                               ║
+║ {Fore.YELLOW}██╗  ██╗██╗   ██╗██████╗ {Fore.CYAN}                              ║
+║ {Fore.YELLOW}██║  ██║██║   ██║██╔══██╗{Fore.CYAN}                              ║
+║ {Fore.YELLOW}███████║██║   ██║██████╔╝{Fore.CYAN}                              ║
+║ {Fore.YELLOW}██╔══██║██║   ██║██╔══██╗{Fore.CYAN}                              ║
+║ {Fore.YELLOW}██║  ██║╚██████╔╝██████╔╝{Fore.CYAN}                              ║
+║ {Fore.YELLOW}╚═╝  ╚═╝ ╚═════╝ ╚═════╝ {Fore.CYAN}                              ║
+╚═══════════════════════════════════════════════════════════════╝
+{Style.RESET_ALL}
+{Fore.GREEN}PenTest Hub v{self.version} - Your Penetration Testing Command Center
+{Fore.YELLOW}Type 'help' to see available commands.{Style.RESET_ALL}
+"""
+        print(banner)
+    
+    def print_help(self):
+        """Display help information"""
+        help_text = f"""
+{Fore.CYAN}Available Commands:{Style.RESET_ALL}
+  {Fore.GREEN}help{Style.RESET_ALL}                 Show this help message
+  {Fore.GREEN}list{Style.RESET_ALL} [category]      List all tools or tools in a specific category
+  {Fore.GREEN}categories{Style.RESET_ALL}           List all tool categories
+  {Fore.GREEN}info{Style.RESET_ALL} <tool>          Show detailed information about a tool
+  {Fore.GREEN}examples{Style.RESET_ALL} <tool>      Show common usage examples for a tool
+  {Fore.GREEN}run{Style.RESET_ALL} <tool> [args]    Run a specific tool with optional arguments
+  {Fore.GREEN}history{Style.RESET_ALL}              Show command history
+  {Fore.GREEN}add{Style.RESET_ALL}                  Add a custom tool
+  {Fore.GREEN}remove{Style.RESET_ALL} <tool>        Remove a custom tool
+  {Fore.GREEN}update{Style.RESET_ALL}               Check for updates
+  {Fore.GREEN}system{Style.RESET_ALL}               Display system information
+  {Fore.GREEN}exit{Style.RESET_ALL}/{Fore.GREEN}quit{Style.RESET_ALL}             Exit PenTest Hub
+"""
+        print(help_text)
+    
+    def list_categories(self):
+        """List all available tool categories"""
+        categories = set()
+        for tool in self.tools.values():
+            if 'category' in tool:
+                categories.add(tool['category'])
+        
+        print(f"\n{Fore.CYAN}Available Categories:{Style.RESET_ALL}")
+        for category in sorted(categories):
+            print(f"  {Fore.GREEN}{category}{Style.RESET_ALL}")
+        print()
+    
+    def list_tools(self, category=None):
+        """List tools, optionally filtered by category"""
+        if category:
+            tools_to_show = {name: tool for name, tool in self.tools.items() 
+                            if tool.get('category') == category}
+            if not tools_to_show:
+                print(f"\n{Fore.RED}No tools found in category '{category}'.{Style.RESET_ALL}\n")
+                return
+            print(f"\n{Fore.CYAN}Tools in category '{category}':{Style.RESET_ALL}")
+        else:
+            tools_to_show = self.tools
+            print(f"\n{Fore.CYAN}All Available Tools:{Style.RESET_ALL}")
+        
+        # Group tools by category
+        by_category = {}
+        for name, tool in tools_to_show.items():
+            cat = tool.get('category', 'uncategorized')
+            if cat not in by_category:
+                by_category[cat] = []
+            by_category[cat].append((name, tool['desc']))
+        
+        for cat, tools in sorted(by_category.items()):
+            if category is None:  # Only print category headers when showing all tools
+                print(f"\n{Fore.YELLOW}{cat.upper()}{Style.RESET_ALL}")
+            for name, desc in sorted(tools):
+                print(f"  {Fore.GREEN}{name.ljust(20)}{Style.RESET_ALL} - {desc}")
+        print()
+    
+    def show_history(self):
+        """Display command history"""
+        if not self.history:
+            print(f"\n{Fore.YELLOW}No command history available.{Style.RESET_ALL}\n")
+            return
+        
+        print(f"\n{Fore.CYAN}Command History:{Style.RESET_ALL}")
+        for i, entry in enumerate(self.history[-20:], 1):  # Show last 20 entries
+            print(f"  {Fore.GREEN}{i}.{Style.RESET_ALL} [{entry['timestamp']}] {entry['tool']}: {entry['command']}")
+        print()
+    
+    def add_tool_interactive(self):
+        """Interactive prompt to add a custom tool"""
+        print(f"\n{Fore.CYAN}Add Custom Tool{Style.RESET_ALL}")
+        name = input(f"{Fore.GREEN}Tool name:{Style.RESET_ALL} ").strip()
+        if not name:
+            print(f"{Fore.RED}Tool name cannot be empty.{Style.RESET_ALL}\n")
+            return
+        
+        if name in self.tools and name not in self.custom_tools:
+            print(f"{Fore.RED}Cannot override built-in tool '{name}'.{Style.RESET_ALL}\n")
+            return
+        
+        description = input(f"{Fore.GREEN}Description:{Style.RESET_ALL} ").strip()
+        command = input(f"{Fore.GREEN}Command:{Style.RESET_ALL} ").strip()
+        category = input(f"{Fore.GREEN}Category:{Style.RESET_ALL} ").strip() or "custom"
+        
+        if not command:
+            print(f"{Fore.RED}Command cannot be empty.{Style.RESET_ALL}\n")
+            return
+        
+        self.add_custom_tool(name, description, command, category)
+    
+    def remove_custom_tool(self, name):
+        """Remove a custom tool"""
+        if name in self.custom_tools:
+            # Remove from main tools dictionary
+            if name in self.tools:
+                del self.tools[name]
+            
+            # Remove from custom tools
+            del self.custom_tools[name]
+            
+            # Remove from categories
+            for category, tools in self.categories.items():
+                if name in tools:
+                    tools.remove(name)
+            
+            self.save_custom_tools()
+            print(f"\n{Fore.GREEN}Tool '{name}' removed successfully.{Style.RESET_ALL}\n")
+        else:
+            print(f"\n{Fore.RED}'{name}' is not a custom tool or does not exist.{Style.RESET_ALL}\n")
+    
+    def check_for_updates(self):
+        """Check for updates to PenTest Hub"""
+        print(f"\n{Fore.CYAN}Checking for updates...{Style.RESET_ALL}")
+        # This would typically connect to a repository or server
+        # For demonstration, we'll just show the current version
+        print(f"{Fore.GREEN}Current version: {self.version}{Style.RESET_ALL}")
+        print(f"{Fore.YELLOW}You are running the latest version of PenTest Hub.{Style.RESET_ALL}\n")
+    
+    def system_info(self):
+        """Display system information"""
+        print(f"\n{Fore.CYAN}System Information:{Style.RESET_ALL}")
+        print(f"  {Fore.GREEN}OS:{Style.RESET_ALL} {platform.system()} {platform.release()}")
+        print(f"  {Fore.GREEN}Python:{Style.RESET_ALL} {platform.python_version()}")
+        print(f"  {Fore.GREEN}Hostname:{Style.RESET_ALL} {socket.gethostname()}")
+        
+        # Check internet connectivity
+        try:
+            requests.get("https://www.google.com", timeout=3)
+            print(f"  {Fore.GREEN}Internet:{Style.RESET_ALL} Connected")
+        except:
+            print(f"  {Fore.GREEN}Internet:{Style.RESET_ALL} {Fore.RED}Not connected{Style.RESET_ALL}")
+        
+        print()
 
 if __name__ == "__main__":
-    root = ctk.CTk()
-    app = KaliPenHub(root)
-    root.mainloop()
+    hub = PenTestHub()
+    hub.main_loop()
