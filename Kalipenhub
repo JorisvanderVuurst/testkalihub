@@ -1,0 +1,158 @@
+#!/usr/bin/env python3
+# KaliPenHub - Pentesting Toolkit for Kali Linux
+import os
+import sys
+import subprocess
+import tkinter as tk
+from tkinter import ttk, messagebox
+import threading
+import webbrowser
+import json
+from datetime import datetime
+import customtkinter as ctk
+import nmap
+import scapy.all as scapy
+
+class KaliPenHub:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("KaliPenHub")
+        self.root.geometry("1200x800")
+        
+        # Setup UI
+        ctk.set_appearance_mode("dark")
+        ctk.set_default_color_theme("blue")
+        
+        self.create_widgets()
+        
+    def create_widgets(self):
+        # Main notebook (tabs)
+        self.notebook = ttk.Notebook(self.root)
+        
+        # Create tabs
+        self.dashboard_tab = ctk.CTkFrame(self.notebook)
+        self.recon_tab = ctk.CTkFrame(self.notebook)
+        
+        self.notebook.add(self.dashboard_tab, text="Dashboard")
+        self.notebook.add(self.recon_tab, text="Reconnaissance")
+        
+        # Dashboard content
+        self.setup_dashboard()
+        self.setup_recon_tab()
+        
+        self.notebook.pack(expand=True, fill="both")
+    
+    def setup_dashboard(self):
+        # Welcome label
+        welcome = ctk.CTkLabel(
+            self.dashboard_tab,
+            text="Welcome to KaliPenHub",
+            font=("Arial", 24)
+        )
+        welcome.pack(pady=20)
+        
+        # Quick tools frame
+        tools_frame = ctk.CTkFrame(self.dashboard_tab)
+        tools_frame.pack(pady=10)
+        
+        # Add tool buttons
+        tools = [
+            ("Nmap Scan", self.run_nmap),
+            ("Nikto Scan", self.run_nikto),
+            ("Metasploit", self.run_metasploit)
+        ]
+        
+        for text, command in tools:
+            btn = ctk.CTkButton(
+                tools_frame,
+                text=text,
+                command=command,
+                width=200
+            )
+            btn.pack(pady=5)
+    
+    def setup_recon_tab(self):
+        # Target entry
+        target_frame = ctk.CTkFrame(self.recon_tab)
+        target_frame.pack(pady=10)
+        
+        ctk.CTkLabel(target_frame, text="Target:").pack(side="left")
+        self.target_entry = ctk.CTkEntry(target_frame, width=300)
+        self.target_entry.pack(side="left", padx=10)
+        
+        # Scan buttons
+        scan_frame = ctk.CTkFrame(self.recon_tab)
+        scan_frame.pack(pady=10)
+        
+        scans = [
+            ("Quick Scan", "-T4 -F"),
+            ("Full Scan", "-T4 -A -v"),
+            ("Vuln Scan", "--script vuln")
+        ]
+        
+        for text, args in scans:
+            btn = ctk.CTkButton(
+                scan_frame,
+                text=text,
+                command=lambda a=args: self.run_scan(a),
+                width=150
+            )
+            btn.pack(side="left", padx=5)
+    
+    def run_nmap(self):
+        target = self.target_entry.get() or "127.0.0.1"
+        threading.Thread(target=self._run_nmap, args=(target,)).start()
+    
+    def _run_nmap(self, target):
+        try:
+            nm = nmap.PortScanner()
+            nm.scan(target)
+            messagebox.showinfo("Scan Complete", f"Scan results for {target}:\n{nm.csv()}")
+        except Exception as e:
+            messagebox.showerror("Error", f"Scan failed: {str(e)}")
+    
+    def run_scan(self, args):
+        target = self.target_entry.get()
+        if not target:
+            messagebox.showwarning("Warning", "Please enter a target")
+            return
+            
+        threading.Thread(target=self._run_scan, args=(target, args)).start()
+    
+    def _run_scan(self, target, args):
+        try:
+            nm = nmap.PortScanner()
+            nm.scan(target, arguments=args)
+            messagebox.showinfo("Results", f"Scan completed:\n{nm.scaninfo()}")
+        except Exception as e:
+            messagebox.showerror("Error", str(e))
+    
+    def run_nikto(self):
+        target = self.target_entry.get()
+        if not target:
+            messagebox.showwarning("Warning", "Please enter a target")
+            return
+            
+        threading.Thread(target=self._run_nikto, args=(target,)).start()
+    
+    def _run_nikto(self, target):
+        try:
+            result = subprocess.run(
+                ["nikto", "-h", target],
+                capture_output=True,
+                text=True
+            )
+            messagebox.showinfo("Nikto Results", result.stdout)
+        except Exception as e:
+            messagebox.showerror("Error", str(e))
+    
+    def run_metasploit(self):
+        try:
+            subprocess.Popen(["msfconsole"])
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to start Metasploit: {str(e)}")
+
+if __name__ == "__main__":
+    root = ctk.CTk()
+    app = KaliPenHub(root)
+    root.mainloop()
